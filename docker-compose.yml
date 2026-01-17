@@ -1,0 +1,119 @@
+version: '3.8'
+
+services:
+  # Backend Service
+  backend:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: gobesnet-backend
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - PORT=5000
+      - JWT_SECRET=your_secure_jwt_secret_change_this
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/gobesnet?schema=public
+      - MIKROTIK_DEFAULT_PORT=8728
+      - WHATSAPP_ENABLED=false
+      - TELEGRAM_ENABLED=false
+    ports:
+      - "5000:5000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - gobesnet-network
+    volumes:
+      - ./backend/prisma:/app/prisma
+      - gobesnet-backend-node-modules:/app/node_modules
+    healthcheck:
+      test: ["CMD", "node", "healthcheck.js"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Frontend Service
+  frontend:
+    build: 
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: gobesnet-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    environment:
+      - NODE_ENV=production
+      - REACT_APP_API_URL=/api
+      - REACT_APP_WS_URL=ws://${HOST_IP:-localhost}:5000
+    networks:
+      - gobesnet-network
+    volumes:
+      - gobesnet-frontend-node-modules:/app/node_modules
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    platform: linux/arm64
+    container_name: gobesnet-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: gobesnet
+    volumes:
+      - gobesnet-postgres-data:/var/lib/postgresql/data
+      - ./init-db:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+    networks:
+      - gobesnet-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # pgAdmin (Database Management)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    platform: linux/arm64
+    container_name: gobesnet-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@gobes.net
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+    networks:
+      - gobesnet-network
+    volumes:
+      - gobesnet-pgadmin-data:/var/lib/pgadmin
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+# Networks
+networks:
+  gobesnet-network:
+    driver: bridge
+
+# Volumes
+volumes:
+  gobesnet-postgres-data:
+  gobesnet-pgadmin-data:
+  gobesnet-backend-node-modules:
+  gobesnet-frontend-node-modules:

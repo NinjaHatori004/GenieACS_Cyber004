@@ -1,0 +1,169 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  VIEWER
+}
+
+enum RouterStatus {
+  ONLINE
+  OFFLINE
+  UNREACHABLE
+  MAINTENANCE
+}
+
+enum PPPoEStatus {
+  ACTIVE
+  DISABLED
+  EXPIRED
+}
+
+enum BillingStatus {
+  PAID
+  UNPAID
+  OVERDUE
+  CANCELLED
+}
+
+model User {
+  id        String   @id @default(uuid())
+  username  String   @unique
+  password  String
+  fullName  String?
+  email     String?  @unique
+  role      UserRole @default(VIEWER)
+  isActive  Boolean  @default(true)
+  lastLogin DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+  
+  @@index([username])
+  @@index([email])
+  @@map("users")
+}
+
+model Router {
+  id          String       @id @default(uuid())
+  name        String
+  description String?
+  ipAddress   String
+  port        Int          @default(8728)
+  username    String
+  password    String
+  status      RouterStatus @default(OFFLINE)
+  lastSeen    DateTime?
+  isActive    Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  createdBy   String?
+  
+  pppoeUsers  PPPoEUser[]
+  logs        RouterLog[]
+  
+  @@unique([ipAddress, port])
+  @@index([name])
+  @@index([status])
+  @@map("routers")
+}
+
+model PPPoEUser {
+  id          String     @id @default(uuid())
+  username    String
+  password    String
+  service     String     @default("pppoe")
+  profile     String
+  remoteAddr  String?
+  localAddr   String?
+  status      PPPoEStatus @default(ACTIVE)
+  isActive    Boolean    @default(true)
+  lastSeen    DateTime?
+  routerId    String
+  router      Router     @relation(fields: [routerId], references: [id])
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  createdBy   String?
+  
+  billings    Billing[]
+  
+  @@unique([routerId, username])
+  @@index([username])
+  @@index([status])
+  @@map("pppoe_users")
+}
+
+model Billing {
+  id          String       @id @default(uuid())
+  userId      String
+  pppoeUserId String
+  pppoeUser   PPPoEUser    @relation(fields: [pppoeUserId], references: [id])
+  packageName String
+  amount      Float
+  dueDate     DateTime
+  status      BillingStatus @default(UNPAID)
+  paidAt      DateTime?
+  notes       String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  createdBy   String?
+  
+  @@index([pppoeUserId])
+  @@index([status])
+  @@index([dueDate])
+  @@map("billings")
+}
+
+model RouterLog {
+  id        String   @id @default(uuid())
+  routerId  String
+  router    Router   @relation(fields: [routerId], references: [id])
+  level     String   // info, warning, error
+  message   String
+  details   Json?
+  createdAt DateTime @default(now())
+  
+  @@index([routerId])
+  @@index([createdAt])
+  @@map("router_logs")
+}
+
+model Notification {
+  id          String   @id @default(uuid())
+  title       String
+  message     String
+  type        String   // info, warning, error, success
+  isRead      Boolean  @default(false)
+  userId      String?
+  relatedId   String?  // ID of related entity (router, pppoe user, etc.)
+  relatedType String?  // Type of related entity
+  createdAt   DateTime @default(now())
+  
+  @@index([userId])
+  @@index([isRead])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id])
+  refreshToken String   @unique
+  userAgent    String?
+  ipAddress    String?
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+  
+  @@index([userId])
+  @@index([refreshToken])
+  @@map("sessions")
+}
